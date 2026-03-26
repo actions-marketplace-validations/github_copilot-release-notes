@@ -124,6 +124,20 @@ describe('parseOutput', () => {
     const result = parseOutput('')
     expect(result.entries).toHaveLength(0)
   })
+
+  it('coerces non-array uncertainEntries and skippedPRs to empty arrays', () => {
+    const input = JSON.stringify({
+      entries: [{description: 'Test', pr: 1, author: 'a'}],
+      uncertainEntries: 'not an array',
+      skippedPRs: {bad: true}
+    })
+    const result = parseOutput(input)
+    expect(result.entries).toHaveLength(1)
+    expect(Array.isArray(result.uncertainEntries)).toBe(true)
+    expect(result.uncertainEntries).toHaveLength(0)
+    expect(Array.isArray(result.skippedPRs)).toBe(true)
+    expect(result.skippedPRs).toHaveLength(0)
+  })
 })
 
 describe('formatAsMarkdown', () => {

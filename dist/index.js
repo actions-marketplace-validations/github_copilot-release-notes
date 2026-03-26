@@ -29983,7 +29983,7 @@ async function ensureCopilotCLI() {
         // Not found, install it
     }
     core.info('Installing Copilot CLI via npm...');
-    const exitCode = await exec.exec('npm', ['install', '-g', '@github/copilot'], { silent: true });
+    const exitCode = await exec.exec('npm', ['install', '-g', '@github/copilot'], { silent: true, env: buildCopilotEnv() });
     if (exitCode !== 0) {
         throw new Error('Failed to install Copilot CLI. Please ensure Node.js v22+ is available ' +
             'or install it manually before running this action.');
@@ -30038,6 +30038,7 @@ async function runCopilot(copilotPath, prompt, model) {
         let stdout = '';
         let stderr = '';
         let killed = false;
+        let killTimerId;
         const cp = (0, child_process_1.spawn)(copilotPath, args, {
             env: buildCopilotEnv(),
             stdio: ['ignore', 'pipe', 'pipe']
@@ -30045,24 +30046,32 @@ async function runCopilot(copilotPath, prompt, model) {
         const timeoutId = setTimeout(() => {
             killed = true;
             cp.kill('SIGTERM');
-            // Force kill after 10s grace period
-            setTimeout(() => {
-                if (!cp.killed)
+            // Always send SIGKILL after grace period — no-op if already dead
+            killTimerId = setTimeout(() => {
+                try {
                     cp.kill('SIGKILL');
+                }
+                catch {
+                    // Process already exited
+                }
             }, 10_000);
         }, COPILOT_TIMEOUT_MS);
+        // Sanitize output to prevent workflow command injection (lines starting with ::)
+        const sanitize = (chunk) => chunk.replace(/^::/gm, '  ::');
         cp.stdout.on('data', (data) => {
             const chunk = data.toString();
             stdout += chunk;
-            process.stdout.write(chunk);
+            process.stdout.write(sanitize(chunk));
         });
         cp.stderr.on('data', (data) => {
             const chunk = data.toString();
             stderr += chunk;
-            process.stderr.write(chunk);
+            process.stderr.write(sanitize(chunk));
         });
         cp.on('close', (code) => {
             clearTimeout(timeoutId);
+            if (killTimerId)
+                clearTimeout(killTimerId);
             if (killed) {
                 reject(new Error(`Copilot CLI timed out after ${COPILOT_TIMEOUT_MS / 1000} seconds and was killed`));
                 return;
@@ -30078,6 +30087,8 @@ async function runCopilot(copilotPath, prompt, model) {
         });
         cp.on('error', (err) => {
             clearTimeout(timeoutId);
+            if (killTimerId)
+                clearTimeout(killTimerId);
             reject(new Error(`Failed to spawn Copilot CLI: ${err.message}`));
         });
     });
@@ -30332,9 +30343,11 @@ function parseOutput(stdout) {
             return { entries: [], uncertainEntries: [], skippedPRs: [] };
         }
         return {
-            entries: parsed.entries || [],
-            uncertainEntries: parsed.uncertainEntries || [],
-            skippedPRs: parsed.skippedPRs || []
+            entries: parsed.entries,
+            uncertainEntries: Array.isArray(parsed.uncertainEntries)
+                ? parsed.uncertainEntries
+                : [],
+            skippedPRs: Array.isArray(parsed.skippedPRs) ? parsed.skippedPRs : []
         };
     }
     catch (err) {
@@ -30666,7 +30679,7 @@ function buildPRSection(prs) {
  * Strips markdown heading markers that could collide with prompt structure.
  */
 function sanitizePRField(value) {
-    return value.replace(/^#+\s/gm, '').replace(/<\/?pr-data>/g, '');
+    return value.replace(/^#+\s/gm, '').replace(/<\/?pr-data>/gi, '');
 }
 function buildOutputInstructions() {
     return `## Required Output Format

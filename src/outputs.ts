@@ -48,9 +48,11 @@ export function parseOutput(stdout: string): ParsedOutput {
       return {entries: [], uncertainEntries: [], skippedPRs: []}
     }
     return {
-      entries: parsed.entries || [],
-      uncertainEntries: parsed.uncertainEntries || [],
-      skippedPRs: parsed.skippedPRs || []
+      entries: parsed.entries,
+      uncertainEntries: Array.isArray(parsed.uncertainEntries)
+        ? parsed.uncertainEntries
+        : [],
+      skippedPRs: Array.isArray(parsed.skippedPRs) ? parsed.skippedPRs : []
     }
   } catch (err) {
     core.warning(`Failed to parse JSON output: ${err}`)

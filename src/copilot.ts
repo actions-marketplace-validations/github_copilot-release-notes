@@ -29,7 +29,7 @@ export async function ensureCopilotCLI(): Promise<string> {
   const exitCode = await exec.exec(
     'npm',
     ['install', '-g', '@github/copilot'],
-    {silent: true}
+    {silent: true, env: buildCopilotEnv()}
   )
 
   if (exitCode !== 0) {
@@ -100,6 +100,7 @@ export async function runCopilot(
     let stdout = ''
     let stderr = ''
     let killed = false
+    let killTimerId: ReturnType<typeof setTimeout> | undefined
 
     const cp = spawn(copilotPath, args, {
       env: buildCopilotEnv(),
@@ -109,26 +110,35 @@ export async function runCopilot(
     const timeoutId = setTimeout(() => {
       killed = true
       cp.kill('SIGTERM')
-      // Force kill after 10s grace period
-      setTimeout(() => {
-        if (!cp.killed) cp.kill('SIGKILL')
+      // Always send SIGKILL after grace period — no-op if already dead
+      killTimerId = setTimeout(() => {
+        try {
+          cp.kill('SIGKILL')
+        } catch {
+          // Process already exited
+        }
       }, 10_000)
     }, COPILOT_TIMEOUT_MS)
+
+    // Sanitize output to prevent workflow command injection (lines starting with ::)
+    const sanitize = (chunk: string): string =>
+      chunk.replace(/^::/gm, '  ::')
 
     cp.stdout.on('data', (data: Buffer) => {
       const chunk = data.toString()
       stdout += chunk
-      process.stdout.write(chunk)
+      process.stdout.write(sanitize(chunk))
     })
 
     cp.stderr.on('data', (data: Buffer) => {
       const chunk = data.toString()
       stderr += chunk
-      process.stderr.write(chunk)
+      process.stderr.write(sanitize(chunk))
     })
 
     cp.on('close', (code: number | null) => {
       clearTimeout(timeoutId)
+      if (killTimerId) clearTimeout(killTimerId)
 
       if (killed) {
         reject(
@@ -152,6 +162,7 @@ export async function runCopilot(
 
     cp.on('error', (err: Error) => {
       clearTimeout(timeoutId)
+      if (killTimerId) clearTimeout(killTimerId)
       reject(new Error(`Failed to spawn Copilot CLI: ${err.message}`))
     })
   })

@@ -170,7 +170,7 @@ function buildPRSection(prs: PRInfo[]): string {
  * Strips markdown heading markers that could collide with prompt structure.
  */
 function sanitizePRField(value: string): string {
-  return value.replace(/^#+\s/gm, '').replace(/<\/?pr-data>/g, '')
+  return value.replace(/^#+\s/gm, '').replace(/<\/?pr-data>/gi, '')
 }
 
 function buildOutputInstructions(): string {
