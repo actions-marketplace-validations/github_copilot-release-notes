@@ -179,8 +179,9 @@ async function findPRsViaGitHubAPI(
       }
     }
 
-    // Check squash merges
-    const squashMatch = commit.commit.message.match(/\(#(\d+)\)/)
+    // Check squash merges — only match at end of subject line
+    const subject = commit.commit.message.split('\n')[0]
+    const squashMatch = subject.match(/\(#(\d+)\)$/)
     if (squashMatch) {
       const num = parseInt(squashMatch[1], 10)
       if (!seen.has(num)) {
@@ -188,6 +189,18 @@ async function findPRsViaGitHubAPI(
         prNumbers.push(num)
       }
     }
+  }
+
+  // Warn if results may be truncated (GitHub compare API caps at 250 commits)
+  if (
+    comparison.data.commits.length >= 250 ||
+    (comparison.data.total_commits !== undefined &&
+      comparison.data.total_commits > comparison.data.commits.length)
+  ) {
+    core.warning(
+      `GitHub compare API returned ${comparison.data.commits.length} commits but the range may contain more. ` +
+        `Results could be incomplete. Consider using the 'merge-commits' strategy for large ranges.`
+    )
   }
 
   return prNumbers

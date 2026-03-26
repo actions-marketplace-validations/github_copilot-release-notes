@@ -4,5 +4,10 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/__tests__/**/*.test.ts'],
   collectCoverageFrom: ['src/**/*.ts', '!src/index.ts'],
-  coverageDirectory: 'coverage'
+  coverageDirectory: 'coverage',
+  globals: {
+    'ts-jest': {
+      tsconfig: '__tests__/tsconfig.json'
+    }
+  }
 }

@@ -29,25 +29,24 @@ export interface ParsedOutput {
 
 /**
  * Parse the Copilot CLI output to extract the structured JSON.
+ * Searches for a balanced JSON object containing an "entries" key,
+ * handling cases where the AI output includes other text with braces.
  */
 export function parseOutput(stdout: string): ParsedOutput {
-  // Try to find JSON in the output — the CLI may include other text around it
-  const jsonMatch = stdout.match(/\{[\s\S]*"entries"[\s\S]*\}/)
-  if (!jsonMatch) {
+  // Find all potential JSON start positions (opening braces)
+  const result = findEntriesJSON(stdout)
+  if (!result) {
     core.warning('Could not find JSON output from Copilot CLI')
     core.debug(`Full output: ${stdout}`)
     return {entries: [], uncertainEntries: [], skippedPRs: []}
   }
 
-  // Find the balanced JSON object
-  const jsonStr = extractBalancedJSON(jsonMatch[0])
-  if (!jsonStr) {
-    core.warning('Could not extract valid JSON from Copilot CLI output')
-    return {entries: [], uncertainEntries: [], skippedPRs: []}
-  }
-
   try {
-    const parsed = JSON.parse(jsonStr)
+    const parsed = JSON.parse(result)
+    if (!Array.isArray(parsed.entries)) {
+      core.warning('JSON output has invalid "entries" field (expected array)')
+      return {entries: [], uncertainEntries: [], skippedPRs: []}
+    }
     return {
       entries: parsed.entries || [],
       uncertainEntries: parsed.uncertainEntries || [],
@@ -55,20 +54,46 @@ export function parseOutput(stdout: string): ParsedOutput {
     }
   } catch (err) {
     core.warning(`Failed to parse JSON output: ${err}`)
-    core.debug(`Attempted to parse: ${jsonStr}`)
+    core.debug(`Attempted to parse: ${result}`)
     return {entries: [], uncertainEntries: [], skippedPRs: []}
   }
 }
 
 /**
- * Extract a balanced JSON object from a string that starts with '{'.
+ * Search through the output for a balanced JSON object that contains "entries".
+ * Tries each '{' as a potential start, extracts the balanced object, and checks
+ * if it parses as JSON with an "entries" key.
  */
-function extractBalancedJSON(str: string): string | null {
+function findEntriesJSON(str: string): string | null {
+  let searchFrom = 0
+  while (searchFrom < str.length) {
+    const braceIdx = str.indexOf('{', searchFrom)
+    if (braceIdx === -1) break
+
+    const candidate = extractBalancedJSON(str, braceIdx)
+    if (candidate && candidate.includes('"entries"')) {
+      // Verify it's valid JSON before returning
+      try {
+        JSON.parse(candidate)
+        return candidate
+      } catch {
+        // Not valid JSON, keep searching
+      }
+    }
+    searchFrom = braceIdx + 1
+  }
+  return null
+}
+
+/**
+ * Extract a balanced JSON object from a string starting at the given index.
+ */
+function extractBalancedJSON(str: string, startIdx: number = 0): string | null {
   let depth = 0
   let inString = false
   let escape = false
 
-  for (let i = 0; i < str.length; i++) {
+  for (let i = startIdx; i < str.length; i++) {
     const ch = str[i]
 
     if (escape) {
@@ -92,7 +117,7 @@ function extractBalancedJSON(str: string): string | null {
     if (ch === '}') {
       depth--
       if (depth === 0) {
-        return str.substring(0, i + 1)
+        return str.substring(startIdx, i + 1)
       }
     }
   }

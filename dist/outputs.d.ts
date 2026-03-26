@@ -23,6 +23,8 @@ export interface ParsedOutput {
 }
 /**
  * Parse the Copilot CLI output to extract the structured JSON.
+ * Searches for a balanced JSON object containing an "entries" key,
+ * handling cases where the AI output includes other text with braces.
  */
 export declare function parseOutput(stdout: string): ParsedOutput;
 /**
