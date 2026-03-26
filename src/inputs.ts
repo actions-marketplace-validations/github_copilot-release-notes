@@ -1,4 +1,7 @@
+import * as fs from 'fs'
 import * as core from '@actions/core'
+
+const DEFAULT_INSTRUCTIONS_PATH = '.github/release-notes-instructions.md'
 
 export interface ActionInputs {
   baseRef: string
@@ -16,7 +19,9 @@ export function getInputs(): ActionInputs {
 
   const headRef = core.getInput('head-ref') || 'HEAD'
 
-  const instructionsPath = core.getInput('instructions') || undefined
+  const instructionsPath = resolveInstructionsPath(
+    core.getInput('instructions') || undefined
+  )
 
   const model = core.getInput('model') || undefined
 
@@ -34,4 +39,29 @@ export function getInputs(): ActionInputs {
     model,
     prStrategy: prStrategyRaw
   }
+}
+
+/**
+ * Resolve the instructions file path:
+ * 1. If explicitly provided via input, use that
+ * 2. Otherwise, check for .github/release-notes-instructions.md in the workspace
+ * 3. If neither exists, return undefined (generic mode)
+ */
+function resolveInstructionsPath(
+  explicit: string | undefined
+): string | undefined {
+  if (explicit) {
+    core.info(`📖 Using explicit instructions: ${explicit}`)
+    return explicit
+  }
+
+  if (fs.existsSync(DEFAULT_INSTRUCTIONS_PATH)) {
+    core.info(
+      `📖 Auto-discovered instructions: ${DEFAULT_INSTRUCTIONS_PATH}`
+    )
+    return DEFAULT_INSTRUCTIONS_PATH
+  }
+
+  core.info('📖 No custom instructions found — using generic mode')
+  return undefined
 }
