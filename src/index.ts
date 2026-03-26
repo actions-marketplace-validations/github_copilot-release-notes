@@ -44,6 +44,20 @@ async function run(): Promise<void> {
     // 6. Parse output and set action outputs
     core.info('📊 Parsing results...')
     const parsed = parseOutput(result.stdout)
+
+    // Detect silent failures — PRs found but nothing generated
+    const totalOutput =
+      parsed.entries.length +
+      parsed.uncertainEntries.length +
+      parsed.skippedPRs.length
+    if (totalOutput === 0 && prs.length > 0) {
+      core.warning(
+        `⚠️ Found ${prs.length} PR(s) but generated 0 release notes. ` +
+          `Copilot CLI output may be malformed or the model may have failed. ` +
+          `Check the workflow logs for details.`
+      )
+    }
+
     setOutputs(parsed)
 
     core.info('✅ Release notes generation complete!')

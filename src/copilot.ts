@@ -1,6 +1,7 @@
-import * as exec from '@actions/exec'
 import * as core from '@actions/core'
 import * as io from '@actions/io'
+import * as exec from '@actions/exec'
+import {spawn} from 'child_process'
 
 export interface CopilotResult {
   stdout: string
@@ -74,7 +75,8 @@ function buildCopilotEnv(): Record<string, string> {
 
 /**
  * Run the Copilot CLI with the given prompt and return the result.
- * Only grants shell(git) — no other shell tools or unrestricted file access.
+ * Uses child_process.spawn directly so we can enforce a real timeout
+ * by killing the process if it exceeds the limit.
  */
 export async function runCopilot(
   copilotPath: string,
@@ -94,48 +96,63 @@ export async function runCopilot(
     args.push('--model', model)
   }
 
-  let stdout = ''
-  let stderr = ''
-  let timedOut = false
+  return new Promise<CopilotResult>((resolve, reject) => {
+    let stdout = ''
+    let stderr = ''
+    let killed = false
 
-  // Set up a timeout to kill the process if it hangs
-  const timeoutId = setTimeout(() => {
-    timedOut = true
-    core.error(
-      `Copilot CLI timed out after ${COPILOT_TIMEOUT_MS / 1000} seconds`
-    )
-  }, COPILOT_TIMEOUT_MS)
-
-  try {
-    const exitCode = await exec.exec(copilotPath, args, {
-      listeners: {
-        stdout: (data: Buffer) => {
-          stdout += data.toString()
-        },
-        stderr: (data: Buffer) => {
-          stderr += data.toString()
-        }
-      },
-      env: buildCopilotEnv()
+    const cp = spawn(copilotPath, args, {
+      env: buildCopilotEnv(),
+      stdio: ['ignore', 'pipe', 'pipe']
     })
 
-    clearTimeout(timeoutId)
+    const timeoutId = setTimeout(() => {
+      killed = true
+      cp.kill('SIGTERM')
+      // Force kill after 10s grace period
+      setTimeout(() => {
+        if (!cp.killed) cp.kill('SIGKILL')
+      }, 10_000)
+    }, COPILOT_TIMEOUT_MS)
 
-    if (timedOut) {
-      throw new Error(
-        `Copilot CLI timed out after ${COPILOT_TIMEOUT_MS / 1000} seconds`
-      )
-    }
+    cp.stdout.on('data', (data: Buffer) => {
+      const chunk = data.toString()
+      stdout += chunk
+      process.stdout.write(chunk)
+    })
 
-    if (exitCode !== 0) {
-      core.error(`Copilot CLI exited with code ${exitCode}`)
-      core.error(`stderr: ${stderr}`)
-      throw new Error(`Copilot CLI failed with exit code ${exitCode}`)
-    }
+    cp.stderr.on('data', (data: Buffer) => {
+      const chunk = data.toString()
+      stderr += chunk
+      process.stderr.write(chunk)
+    })
 
-    return {stdout, exitCode}
-  } catch (err) {
-    clearTimeout(timeoutId)
-    throw err
-  }
+    cp.on('close', (code: number | null) => {
+      clearTimeout(timeoutId)
+
+      if (killed) {
+        reject(
+          new Error(
+            `Copilot CLI timed out after ${COPILOT_TIMEOUT_MS / 1000} seconds and was killed`
+          )
+        )
+        return
+      }
+
+      const exitCode = code ?? 1
+      if (exitCode !== 0) {
+        core.error(`Copilot CLI exited with code ${exitCode}`)
+        core.error(`stderr: ${stderr}`)
+        reject(new Error(`Copilot CLI failed with exit code ${exitCode}`))
+        return
+      }
+
+      resolve({stdout, exitCode})
+    })
+
+    cp.on('error', (err: Error) => {
+      clearTimeout(timeoutId)
+      reject(new Error(`Failed to spawn Copilot CLI: ${err.message}`))
+    })
+  })
 }

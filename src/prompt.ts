@@ -79,8 +79,10 @@ For example:
 - \`git log --oneline ${baseRef}..${headRef}\` to see the commit history
 - \`git show <commit-sha>\` to examine a specific commit
 
-**Important:** Only use git commands to inspect the repository. Do not attempt to
-read environment variables, system files, or anything outside the repository.
+**Important:** Only use the following git subcommands to inspect the repository:
+\`git log\`, \`git diff\`, \`git show\`. Do not use \`git -c\`, \`git config\`,
+or any git aliases. Do not attempt to read environment variables, system files,
+or anything outside the repository.
 
 ## Writing Guidelines
 
@@ -149,8 +151,11 @@ function buildPRSection(prs: PRInfo[]): string {
         pr.body.length > 2000
           ? pr.body.substring(0, 2000) + '\n... (truncated)'
           : pr.body
-      // Escape backtick sequences in the body to prevent breaking out of the code fence
-      lines.push(truncatedBody.replace(/```/g, '` ` `'))
+      // Sanitize: strip pr-data delimiters and escape backtick fences
+      const sanitizedBody = truncatedBody
+        .replace(/<\/?pr-data>/gi, '')
+        .replace(/```/g, '` ` `')
+      lines.push(sanitizedBody)
       lines.push('```')
     }
     lines.push('')

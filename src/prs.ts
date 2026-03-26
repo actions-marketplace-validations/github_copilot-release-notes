@@ -29,7 +29,7 @@ async function detectRepo(): Promise<{owner: string; repo: string}> {
 
   // Handle HTTPS: https://github.com/owner/repo.git
   const httpsMatch = remoteUrl.match(
-    /github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?$/
+    /github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/
   )
   if (httpsMatch) {
     return {owner: httpsMatch[1], repo: httpsMatch[2]}
@@ -37,7 +37,7 @@ async function detectRepo(): Promise<{owner: string; repo: string}> {
 
   // Handle SSH: git@github.com:owner/repo.git
   const sshMatch = remoteUrl.match(
-    /github\.com:([^/]+)\/([^/.]+?)(?:\.git)?$/
+    /github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/
   )
   if (sshMatch) {
     return {owner: sshMatch[1], repo: sshMatch[2]}
@@ -69,7 +69,24 @@ export async function findPRs(
   }
 
   core.info(`Found ${prNumbers.length} PR(s) to analyze`)
-  return fetchPRDetails(prNumbers)
+  const prs = await fetchPRDetails(prNumbers)
+
+  const failedCount = prNumbers.length - prs.length
+  if (failedCount > 0) {
+    core.warning(
+      `Failed to fetch details for ${failedCount} of ${prNumbers.length} PRs. ` +
+        `Release notes will be incomplete.`
+    )
+  }
+
+  if (prs.length === 0 && prNumbers.length > 0) {
+    throw new Error(
+      `Discovered ${prNumbers.length} PR(s) but failed to fetch details for any of them. ` +
+        `Check your token permissions and API access.`
+    )
+  }
+
+  return prs
 }
 
 /**

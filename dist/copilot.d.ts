@@ -8,6 +8,7 @@ export interface CopilotResult {
 export declare function ensureCopilotCLI(): Promise<string>;
 /**
  * Run the Copilot CLI with the given prompt and return the result.
- * Only grants shell(git) — no other shell tools or unrestricted file access.
+ * Uses child_process.spawn directly so we can enforce a real timeout
+ * by killing the process if it exceeds the limit.
  */
 export declare function runCopilot(copilotPath: string, prompt: string, model?: string): Promise<CopilotResult>;

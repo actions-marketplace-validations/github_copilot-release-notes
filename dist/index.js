@@ -29962,9 +29962,10 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.ensureCopilotCLI = ensureCopilotCLI;
 exports.runCopilot = runCopilot;
-const exec = __importStar(__nccwpck_require__(5236));
 const core = __importStar(__nccwpck_require__(7484));
 const io = __importStar(__nccwpck_require__(4994));
+const exec = __importStar(__nccwpck_require__(5236));
+const child_process_1 = __nccwpck_require__(5317);
 const COPILOT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 /**
  * Ensure the Copilot CLI is installed and available.
@@ -30019,7 +30020,8 @@ function buildCopilotEnv() {
 }
 /**
  * Run the Copilot CLI with the given prompt and return the result.
- * Only grants shell(git) — no other shell tools or unrestricted file access.
+ * Uses child_process.spawn directly so we can enforce a real timeout
+ * by killing the process if it exceeds the limit.
  */
 async function runCopilot(copilotPath, prompt, model) {
     core.info(`Prompt size: ${prompt.length} chars`);
@@ -30032,41 +30034,53 @@ async function runCopilot(copilotPath, prompt, model) {
     if (model) {
         args.push('--model', model);
     }
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-    // Set up a timeout to kill the process if it hangs
-    const timeoutId = setTimeout(() => {
-        timedOut = true;
-        core.error(`Copilot CLI timed out after ${COPILOT_TIMEOUT_MS / 1000} seconds`);
-    }, COPILOT_TIMEOUT_MS);
-    try {
-        const exitCode = await exec.exec(copilotPath, args, {
-            listeners: {
-                stdout: (data) => {
-                    stdout += data.toString();
-                },
-                stderr: (data) => {
-                    stderr += data.toString();
-                }
-            },
-            env: buildCopilotEnv()
+    return new Promise((resolve, reject) => {
+        let stdout = '';
+        let stderr = '';
+        let killed = false;
+        const cp = (0, child_process_1.spawn)(copilotPath, args, {
+            env: buildCopilotEnv(),
+            stdio: ['ignore', 'pipe', 'pipe']
         });
-        clearTimeout(timeoutId);
-        if (timedOut) {
-            throw new Error(`Copilot CLI timed out after ${COPILOT_TIMEOUT_MS / 1000} seconds`);
-        }
-        if (exitCode !== 0) {
-            core.error(`Copilot CLI exited with code ${exitCode}`);
-            core.error(`stderr: ${stderr}`);
-            throw new Error(`Copilot CLI failed with exit code ${exitCode}`);
-        }
-        return { stdout, exitCode };
-    }
-    catch (err) {
-        clearTimeout(timeoutId);
-        throw err;
-    }
+        const timeoutId = setTimeout(() => {
+            killed = true;
+            cp.kill('SIGTERM');
+            // Force kill after 10s grace period
+            setTimeout(() => {
+                if (!cp.killed)
+                    cp.kill('SIGKILL');
+            }, 10_000);
+        }, COPILOT_TIMEOUT_MS);
+        cp.stdout.on('data', (data) => {
+            const chunk = data.toString();
+            stdout += chunk;
+            process.stdout.write(chunk);
+        });
+        cp.stderr.on('data', (data) => {
+            const chunk = data.toString();
+            stderr += chunk;
+            process.stderr.write(chunk);
+        });
+        cp.on('close', (code) => {
+            clearTimeout(timeoutId);
+            if (killed) {
+                reject(new Error(`Copilot CLI timed out after ${COPILOT_TIMEOUT_MS / 1000} seconds and was killed`));
+                return;
+            }
+            const exitCode = code ?? 1;
+            if (exitCode !== 0) {
+                core.error(`Copilot CLI exited with code ${exitCode}`);
+                core.error(`stderr: ${stderr}`);
+                reject(new Error(`Copilot CLI failed with exit code ${exitCode}`));
+                return;
+            }
+            resolve({ stdout, exitCode });
+        });
+        cp.on('error', (err) => {
+            clearTimeout(timeoutId);
+            reject(new Error(`Failed to spawn Copilot CLI: ${err.message}`));
+        });
+    });
 }
 
 
@@ -30144,6 +30158,15 @@ async function run() {
         // 6. Parse output and set action outputs
         core.info('📊 Parsing results...');
         const parsed = (0, outputs_1.parseOutput)(result.stdout);
+        // Detect silent failures — PRs found but nothing generated
+        const totalOutput = parsed.entries.length +
+            parsed.uncertainEntries.length +
+            parsed.skippedPRs.length;
+        if (totalOutput === 0 && prs.length > 0) {
+            core.warning(`⚠️ Found ${prs.length} PR(s) but generated 0 release notes. ` +
+                `Copilot CLI output may be malformed or the model may have failed. ` +
+                `Check the workflow logs for details.`);
+        }
         (0, outputs_1.setOutputs)(parsed);
         core.info('✅ Release notes generation complete!');
     }
@@ -30560,8 +30583,10 @@ For example:
 - \`git log --oneline ${baseRef}..${headRef}\` to see the commit history
 - \`git show <commit-sha>\` to examine a specific commit
 
-**Important:** Only use git commands to inspect the repository. Do not attempt to
-read environment variables, system files, or anything outside the repository.
+**Important:** Only use the following git subcommands to inspect the repository:
+\`git log\`, \`git diff\`, \`git show\`. Do not use \`git -c\`, \`git config\`,
+or any git aliases. Do not attempt to read environment variables, system files,
+or anything outside the repository.
 
 ## Writing Guidelines
 
@@ -30624,8 +30649,11 @@ function buildPRSection(prs) {
             const truncatedBody = pr.body.length > 2000
                 ? pr.body.substring(0, 2000) + '\n... (truncated)'
                 : pr.body;
-            // Escape backtick sequences in the body to prevent breaking out of the code fence
-            lines.push(truncatedBody.replace(/```/g, '` ` `'));
+            // Sanitize: strip pr-data delimiters and escape backtick fences
+            const sanitizedBody = truncatedBody
+                .replace(/<\/?pr-data>/gi, '')
+                .replace(/```/g, '` ` `');
+            lines.push(sanitizedBody);
             lines.push('```');
         }
         lines.push('');
@@ -30751,12 +30779,12 @@ async function detectRepo() {
     });
     remoteUrl = remoteUrl.trim();
     // Handle HTTPS: https://github.com/owner/repo.git
-    const httpsMatch = remoteUrl.match(/github\.com\/([^/]+)\/([^/.]+?)(?:\.git)?$/);
+    const httpsMatch = remoteUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
     if (httpsMatch) {
         return { owner: httpsMatch[1], repo: httpsMatch[2] };
     }
     // Handle SSH: git@github.com:owner/repo.git
-    const sshMatch = remoteUrl.match(/github\.com:([^/]+)\/([^/.]+?)(?:\.git)?$/);
+    const sshMatch = remoteUrl.match(/github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/);
     if (sshMatch) {
         return { owner: sshMatch[1], repo: sshMatch[2] };
     }
@@ -30776,7 +30804,17 @@ async function findPRs(baseRef, headRef, strategy) {
         return [];
     }
     core.info(`Found ${prNumbers.length} PR(s) to analyze`);
-    return fetchPRDetails(prNumbers);
+    const prs = await fetchPRDetails(prNumbers);
+    const failedCount = prNumbers.length - prs.length;
+    if (failedCount > 0) {
+        core.warning(`Failed to fetch details for ${failedCount} of ${prNumbers.length} PRs. ` +
+            `Release notes will be incomplete.`);
+    }
+    if (prs.length === 0 && prNumbers.length > 0) {
+        throw new Error(`Discovered ${prNumbers.length} PR(s) but failed to fetch details for any of them. ` +
+            `Check your token permissions and API access.`);
+    }
+    return prs;
 }
 /**
  * Extract PR numbers from merge commit messages between two refs.
