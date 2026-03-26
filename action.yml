@@ -1,0 +1,40 @@
+name: 'Copilot Release Notes'
+description: 'AI-powered release notes generation from PRs between two refs, using GitHub Copilot CLI'
+author: 'GitHub'
+
+branding:
+  icon: 'file-text'
+  color: 'blue'
+
+inputs:
+  base-ref:
+    description: 'Tag, branch, or SHA to compare from (e.g., v3.5.6, release-3.5.6)'
+    required: true
+  head-ref:
+    description: 'Tag, branch, or SHA to compare to (defaults to HEAD)'
+    required: false
+    default: 'HEAD'
+  instructions:
+    description: 'Path to a markdown file with team-specific style guide for release notes'
+    required: false
+  model:
+    description: 'Model override for the Copilot CLI (e.g., gpt-4o, claude-sonnet-4)'
+    required: false
+  pr-strategy:
+    description: 'How to find PRs: merge-commits (default) or github-api'
+    required: false
+    default: 'merge-commits'
+
+outputs:
+  release-notes:
+    description: 'Generated release notes as formatted markdown text'
+  release-notes-json:
+    description: 'Structured JSON with per-entry data (tag, description, pr number, author)'
+  skipped-prs:
+    description: 'JSON array of PRs excluded from notes with reasons'
+  uncertain-entries:
+    description: 'JSON array of entries flagged for human review'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

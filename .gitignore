@@ -1,0 +1,8 @@
+node_modules/
+lib/
+coverage/
+
+# Ignore compiled JS in src, but keep dist/
+src/**/*.js
+src/**/*.d.ts
+src/**/*.js.map
