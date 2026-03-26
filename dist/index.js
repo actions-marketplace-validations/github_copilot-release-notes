@@ -30689,14 +30689,21 @@ async function findPRsViaMergeCommits(baseRef, headRef) {
     return prNumbers;
 }
 /**
+ * Get the best available token for GitHub API calls.
+ * Prefers COPILOT_GITHUB_TOKEN (PAT with broader access) over GITHUB_TOKEN.
+ */
+function getApiToken() {
+    const token = process.env.COPILOT_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
+    if (!token) {
+        throw new Error('Either COPILOT_GITHUB_TOKEN or GITHUB_TOKEN must be set for API calls');
+    }
+    return token;
+}
+/**
  * Find PRs using the GitHub compare API.
  */
 async function findPRsViaGitHubAPI(baseRef, headRef) {
-    const token = process.env.GITHUB_TOKEN;
-    if (!token) {
-        throw new Error('GITHUB_TOKEN is required for github-api pr-strategy');
-    }
-    const octokit = github.getOctokit(token);
+    const octokit = github.getOctokit(getApiToken());
     const { owner, repo } = github.context.repo;
     const comparison = await octokit.rest.repos.compareCommitsWithBasehead({
         owner,
@@ -30731,11 +30738,7 @@ async function findPRsViaGitHubAPI(baseRef, headRef) {
  * Fetch full PR details from the GitHub API.
  */
 async function fetchPRDetails(prNumbers) {
-    const token = process.env.GITHUB_TOKEN;
-    if (!token) {
-        throw new Error('GITHUB_TOKEN is required to fetch PR details');
-    }
-    const octokit = github.getOctokit(token);
+    const octokit = github.getOctokit(getApiToken());
     const { owner, repo } = github.context.repo;
     const prs = [];
     for (const num of prNumbers) {
