@@ -16,7 +16,7 @@ Give it two tags (or branches, or SHAs), and it analyzes every PR merged between
 
 ```yaml
 - name: Generate release notes
-  uses: desktop/copilot-release-notes@main
+  uses: github/copilot-release-notes@main
   with:
     base-ref: v1.0.0
     head-ref: v1.1.0
@@ -81,7 +81,7 @@ jobs:
 
       - name: Generate release notes
         id: notes
-        uses: desktop/copilot-release-notes@main
+        uses: github/copilot-release-notes@main
         with:
           base-ref: ${{ inputs.base-ref }}
           head-ref: ${{ inputs.head-ref }}
@@ -97,7 +97,7 @@ jobs:
 ```yaml
       - name: Generate release notes
         id: notes
-        uses: desktop/copilot-release-notes@main
+        uses: github/copilot-release-notes@main
         with:
           base-ref: v1.0.0
           head-ref: v1.1.0
@@ -120,7 +120,7 @@ jobs:
           fetch-depth: 0
 
       - name: Generate release notes
-        uses: desktop/copilot-release-notes@main
+        uses: github/copilot-release-notes@main
         with:
           base-ref: v2.74.0
           head-ref: v2.75.0
@@ -132,7 +132,7 @@ jobs:
 
 ```yaml
       - name: Generate release notes
-        uses: desktop/copilot-release-notes@main
+        uses: github/copilot-release-notes@main
         with:
           base-ref: v3.5.6
           head-ref: v3.5.7
@@ -251,7 +251,7 @@ This project is maintained by the [@github/gh-cli-and-desktop](https://github.co
 
 ## Support
 
-For bug reports and feature requests, please [open an issue](https://github.com/desktop/copilot-release-notes/issues). See [SUPPORT.md](SUPPORT.md) for more details.
+For bug reports and feature requests, please [open an issue](https://github.com/github/copilot-release-notes/issues). See [SUPPORT.md](SUPPORT.md) for more details.
 
 ## Security
 

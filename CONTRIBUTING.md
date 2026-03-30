@@ -1,7 +1,7 @@
 ## Contributing
 
-[fork]: https://github.com/desktop/copilot-release-notes/fork
-[pr]: https://github.com/desktop/copilot-release-notes/compare
+[fork]: https://github.com/github/copilot-release-notes/fork
+[pr]: https://github.com/github/copilot-release-notes/compare
 
 Hi there! We're thrilled that you'd like to contribute to this project. Your help is essential for keeping it great.
 
