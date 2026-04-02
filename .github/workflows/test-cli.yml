@@ -30,13 +30,13 @@ jobs:
       - name: Checkout instructions file
         uses: actions/checkout@v4
         with:
-          repository: desktop/copilot-release-notes
+          repository: github/copilot-release-notes
           path: _action-config
           sparse-checkout: cli-release-notes-instructions.md
 
       - name: Generate Release Notes (CLI Style)
         id: notes
-        uses: desktop/copilot-release-notes@main
+        uses: github/copilot-release-notes@main
         with:
           base-ref: ${{ inputs.base-ref }}
           head-ref: ${{ inputs.head-ref }}
