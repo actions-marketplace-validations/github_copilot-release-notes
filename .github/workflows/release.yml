@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.2.0)'
+        required: true
+      base-ref:
+        description: 'Previous release tag (e.g., v1.1.0)'
+        required: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        id: notes
+        uses: github/copilot-release-notes@v1
+        with:
+          base-ref: ${{ inputs.base-ref }}
+          head-ref: ${{ github.sha }}
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: ${{ inputs.version }}
+          body: ${{ steps.notes.outputs.release-notes }}
+          draft: true
+
+      - name: Update major version tag
+        run: |
+          MAJOR=$(echo "${{ inputs.version }}" | grep -oE '^v[0-9]+')
+          git tag -f "$MAJOR" "${{ inputs.version }}"
+          git push origin "$MAJOR" --force
